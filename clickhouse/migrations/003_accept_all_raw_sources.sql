@@ -1,9 +1,3 @@
-ALTER TABLE opensignal.events_raw
-    ADD COLUMN IF NOT EXISTS content_id Nullable(String) AFTER magnitude,
-    ADD COLUMN IF NOT EXISTS parent_content_id Nullable(String) AFTER content_id,
-    ADD COLUMN IF NOT EXISTS content_url Nullable(String) AFTER parent_content_id,
-    ADD COLUMN IF NOT EXISTS content_hint Nullable(String) AFTER content_url;
-
 DROP VIEW IF EXISTS opensignal.events_raw_mv;
 
 CREATE MATERIALIZED VIEW opensignal.events_raw_mv
@@ -44,3 +38,4 @@ SELECT
     raw_payload AS raw_json
 FROM opensignal.events_raw_kafka
 WHERE JSONExtractString(message, 'source') != '';
+

@@ -25,9 +25,9 @@ build/
 
 # Docker/local runtime
 docker-data/
+data/
 *.log
 
 # IDEs
 .idea/
 .vscode/
-

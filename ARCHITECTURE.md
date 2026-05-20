@@ -89,3 +89,13 @@ Full content and diffs should be fetched later only for selected high-value even
 - `content_id`, `parent_content_id`, and `content_url` come from Wikimedia revision IDs and `notify_url`, giving later workers a cheap path to fetch the diff via MediaWiki APIs.
 - `content_hint` stores the Wikimedia edit comment, which is often enough for first-pass filtering but should not be treated as ground truth.
 - `geography_hint` is null for Wikipedia until enrichment or source-specific geo inference is added later.
+
+## GDELT Normalization Decisions
+
+- `event_id` is `gdelt:{GLOBALEVENTID}`.
+- `source_subtype` is `cameo:{EventCode}` to preserve the GDELT/CAMEO event taxonomy without inventing our own categories before the LLM layer.
+- `timestamp` uses `DATEADDED`, which matches the 15-minute GDELT update cadence better than day-level `SQLDATE`.
+- `geography_hint` uses `ActionGeo_CountryCode`, falling back to actor geo country codes if the action geography is empty.
+- `magnitude` uses `NumMentions`, which is the best first-pass attention measure in the event export.
+- `content_url` stores `SOURCEURL`, while `content_id` stores `GLOBALEVENTID`.
+- Rows with `EventRootCode = 03` are filtered as low-intensity verbal cooperation noise for this dashboard's first version.

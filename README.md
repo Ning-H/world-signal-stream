@@ -73,3 +73,13 @@ A 30-minute Wikipedia producer soak ran on 2026-05-20 from 19:46:29Z to 20:16:29
 - Content reference coverage: 46,508 rows with revision IDs, 84,149 with content URLs, 84,309 with edit comments
 
 The live Wikimedia stream includes substantial bot and maintenance activity, especially Commons, Wikidata, and categorization events. Later trend and enrichment stages should filter or prioritize events instead of treating every raw change as equally meaningful.
+
+## GDELT Ingestion
+
+Phase 1.3 adds a GDELT 2.0 producer that polls `lastupdate.txt`, downloads the latest `*.export.CSV.zip`, filters low-intensity verbal cooperation events, normalizes rows into the canonical schema, and writes to `events.raw`.
+
+```bash
+python -m ingestion.gdelt_producer --once
+```
+
+Restart safety uses a local SQLite marker at `data/gdelt_state.sqlite3`, so the same export file is not reprocessed after a producer restart.

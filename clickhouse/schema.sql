@@ -73,4 +73,4 @@ SELECT
     ) AS content_hint,
     raw_payload AS raw_json
 FROM opensignal.events_raw_kafka
-WHERE JSONExtractString(message, 'source') = 'wikipedia';
+WHERE JSONExtractString(message, 'source') != '';

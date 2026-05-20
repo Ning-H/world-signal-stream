@@ -39,7 +39,7 @@ SELECT
     ) AS content_hint,
     raw_payload AS raw_json
 FROM opensignal.events_raw_kafka
-WHERE JSONExtractString(message, 'source') = 'wikipedia';
+WHERE JSONExtractString(message, 'source') != '';
 
 ALTER TABLE opensignal.events_raw
 UPDATE
@@ -48,4 +48,3 @@ UPDATE
     content_url = nullIf(JSONExtractString(raw_json, 'notify_url'), ''),
     content_hint = nullIf(JSONExtractString(raw_json, 'comment'), '')
 WHERE source = 'wikipedia';
-
