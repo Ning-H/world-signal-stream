@@ -83,3 +83,19 @@ python -m ingestion.gdelt_producer --once
 ```
 
 Restart safety uses a local SQLite marker at `data/gdelt_state.sqlite3`, so the same export file is not reprocessed after a producer restart.
+
+### Phase 1.3 Soak Result
+
+The GDELT producer was validated against live `lastupdate.txt` exports on 2026-05-20.
+
+- Current GDELT rows stored: 5,537
+- Unique GDELT event IDs: 5,537
+- Rows with geography hints: 5,416
+- Processed export files: 5
+- Total rows seen in those files: 5,851
+- Rows produced after filtering: 5,537
+- Rows filtered as low-intensity verbal cooperation: 314
+- Restart marker behavior: verified; already processed files are skipped and not duplicated
+- DLQ additions from GDELT: 0
+
+The local machine paused during the longer poll run and later resumed; the producer continued polling and processed the latest available export without manual repair. GDELT publication timing can lag the nominal 15-minute cadence, so downstream monitoring should treat missing intervals as a normal source-side condition unless several intervals are absent.
