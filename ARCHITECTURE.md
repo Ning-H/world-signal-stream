@@ -42,3 +42,35 @@ The first local stack is intentionally small and free:
 - Host ports use `19092` for Kafka and `18080` for Kafka UI so OpenSignal can coexist with other local Kafka projects.
 
 All services are local Docker Compose services. Cloud deployment is intentionally deferred to Stage 4 and requires explicit human approval.
+
+## Canonical Raw Event Schema
+
+All source producers write normalized JSON events to Kafka topic `events.raw`. Source-specific payloads are preserved in `raw`, but downstream systems should rely on the canonical top-level fields:
+
+```json
+{
+  "event_id": "wikipedia:enwiki:1234567",
+  "source": "wikipedia",
+  "source_subtype": "edit",
+  "timestamp": "2026-05-20T14:32:11Z",
+  "ingested_at": "2026-05-20T14:32:13Z",
+  "language": "en",
+  "geography_hint": null,
+  "title": "Some Article",
+  "url": "https://en.wikipedia.org/wiki/Some_Article",
+  "actor": "username_or_handle",
+  "is_bot": false,
+  "magnitude": 142,
+  "raw": {}
+}
+```
+
+ClickHouse stores the canonical fields in typed columns and preserves the original source payload as `raw_json`. The Kafka-engine table uses `RawBLOB` plus JSON extraction in the materialized view so the Kafka contract can stay a normal nested JSON object instead of bending around ClickHouse Kafka-engine type constraints.
+
+## Wikipedia Normalization Decisions
+
+- `event_id` is `wikipedia:{wiki}:{id}` so IDs remain globally unique across Wikimedia projects.
+- `source_subtype` uses Wikimedia's `type` field, which can include edits, new pages, logs, and categorization events.
+- `language` is inferred from the Wikimedia domain first, then from the wiki code. Commons appears as `commons`, not an ISO language code.
+- `magnitude` is the absolute byte delta when Wikimedia provides old and new lengths; log-like events leave it null.
+- `geography_hint` is null for Wikipedia until enrichment or source-specific geo inference is added later.
