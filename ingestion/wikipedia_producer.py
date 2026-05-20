@@ -82,6 +82,10 @@ def normalize_recentchange(payload: dict[str, Any]) -> dict[str, Any]:
     if isinstance(old_length, int) and isinstance(new_length, int):
         magnitude = abs(new_length - old_length)
 
+    revision = payload.get("revision") if isinstance(payload.get("revision"), dict) else {}
+    old_revision_id = revision.get("old")
+    new_revision_id = revision.get("new")
+
     return {
         "event_id": f"wikipedia:{wiki}:{change_id}",
         "source": "wikipedia",
@@ -95,6 +99,10 @@ def normalize_recentchange(payload: dict[str, Any]) -> dict[str, Any]:
         "actor": payload.get("user"),
         "is_bot": bool(payload.get("bot", False)),
         "magnitude": magnitude,
+        "content_id": str(new_revision_id) if new_revision_id is not None else None,
+        "parent_content_id": str(old_revision_id) if old_revision_id is not None else None,
+        "content_url": payload.get("notify_url"),
+        "content_hint": payload.get("comment"),
         "raw": payload,
     }
 
@@ -276,4 +284,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -1,42 +1,12 @@
-CREATE DATABASE IF NOT EXISTS opensignal;
+ALTER TABLE opensignal.events_raw
+    ADD COLUMN IF NOT EXISTS content_id Nullable(String) AFTER magnitude,
+    ADD COLUMN IF NOT EXISTS parent_content_id Nullable(String) AFTER content_id,
+    ADD COLUMN IF NOT EXISTS content_url Nullable(String) AFTER parent_content_id,
+    ADD COLUMN IF NOT EXISTS content_hint Nullable(String) AFTER content_url;
 
-CREATE TABLE IF NOT EXISTS opensignal.events_raw
-(
-    event_id String,
-    source LowCardinality(String),
-    source_subtype LowCardinality(String),
-    timestamp DateTime64(3, 'UTC'),
-    ingested_at DateTime64(3, 'UTC'),
-    language Nullable(String),
-    geography_hint Nullable(String),
-    title String,
-    url Nullable(String),
-    actor Nullable(String),
-    is_bot Bool,
-    magnitude Nullable(Int64),
-    content_id Nullable(String),
-    parent_content_id Nullable(String),
-    content_url Nullable(String),
-    content_hint Nullable(String),
-    raw_json String
-)
-ENGINE = MergeTree
-PARTITION BY toDate(timestamp)
-ORDER BY (source, timestamp, event_id);
+DROP VIEW IF EXISTS opensignal.events_raw_mv;
 
-CREATE TABLE IF NOT EXISTS opensignal.events_raw_kafka
-(
-    message String
-)
-ENGINE = Kafka
-SETTINGS
-    kafka_broker_list = 'kafka:29092',
-    kafka_topic_list = 'events.raw',
-    kafka_group_name = 'clickhouse-events-raw',
-    kafka_format = 'RawBLOB',
-    kafka_num_consumers = 1;
-
-CREATE MATERIALIZED VIEW IF NOT EXISTS opensignal.events_raw_mv
+CREATE MATERIALIZED VIEW opensignal.events_raw_mv
 TO opensignal.events_raw
 AS
 WITH

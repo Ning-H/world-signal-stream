@@ -61,11 +61,24 @@ All source producers write normalized JSON events to Kafka topic `events.raw`. S
   "actor": "username_or_handle",
   "is_bot": false,
   "magnitude": 142,
+  "content_id": "7654322",
+  "parent_content_id": "7654321",
+  "content_url": "https://en.wikipedia.org/w/index.php?diff=7654322&oldid=7654321",
+  "content_hint": "tightened wording",
   "raw": {}
 }
 ```
 
 ClickHouse stores the canonical fields in typed columns and preserves the original source payload as `raw_json`. The Kafka-engine table uses `RawBLOB` plus JSON extraction in the materialized view so the Kafka contract can stay a normal nested JSON object instead of bending around ClickHouse Kafka-engine type constraints.
+
+The content fields are references, not full content:
+
+- `content_id`: source-specific immutable content/version ID, such as a Wikipedia new revision ID.
+- `parent_content_id`: prior content/version ID when available, such as a Wikipedia old revision ID.
+- `content_url`: a source URL suitable for fetching or inspecting the content/diff.
+- `content_hint`: source-provided short text about the event, such as a Wikipedia edit comment.
+
+Full content and diffs should be fetched later only for selected high-value events. This keeps the firehose cheap while giving the LLM pipeline enough pointers to retrieve context when an edit is large, repeated, cross-source correlated, or otherwise interesting.
 
 ## Wikipedia Normalization Decisions
 
@@ -73,4 +86,6 @@ ClickHouse stores the canonical fields in typed columns and preserves the origin
 - `source_subtype` uses Wikimedia's `type` field, which can include edits, new pages, logs, and categorization events.
 - `language` is inferred from the Wikimedia domain first, then from the wiki code. Commons appears as `commons`, not an ISO language code.
 - `magnitude` is the absolute byte delta when Wikimedia provides old and new lengths; log-like events leave it null.
+- `content_id`, `parent_content_id`, and `content_url` come from Wikimedia revision IDs and `notify_url`, giving later workers a cheap path to fetch the diff via MediaWiki APIs.
+- `content_hint` stores the Wikimedia edit comment, which is often enough for first-pass filtering but should not be treated as ground truth.
 - `geography_hint` is null for Wikipedia until enrichment or source-specific geo inference is added later.

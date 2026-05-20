@@ -1,42 +1,8 @@
-CREATE DATABASE IF NOT EXISTS opensignal;
+SET mutations_sync = 1;
 
-CREATE TABLE IF NOT EXISTS opensignal.events_raw
-(
-    event_id String,
-    source LowCardinality(String),
-    source_subtype LowCardinality(String),
-    timestamp DateTime64(3, 'UTC'),
-    ingested_at DateTime64(3, 'UTC'),
-    language Nullable(String),
-    geography_hint Nullable(String),
-    title String,
-    url Nullable(String),
-    actor Nullable(String),
-    is_bot Bool,
-    magnitude Nullable(Int64),
-    content_id Nullable(String),
-    parent_content_id Nullable(String),
-    content_url Nullable(String),
-    content_hint Nullable(String),
-    raw_json String
-)
-ENGINE = MergeTree
-PARTITION BY toDate(timestamp)
-ORDER BY (source, timestamp, event_id);
+DROP VIEW IF EXISTS opensignal.events_raw_mv;
 
-CREATE TABLE IF NOT EXISTS opensignal.events_raw_kafka
-(
-    message String
-)
-ENGINE = Kafka
-SETTINGS
-    kafka_broker_list = 'kafka:29092',
-    kafka_topic_list = 'events.raw',
-    kafka_group_name = 'clickhouse-events-raw',
-    kafka_format = 'RawBLOB',
-    kafka_num_consumers = 1;
-
-CREATE MATERIALIZED VIEW IF NOT EXISTS opensignal.events_raw_mv
+CREATE MATERIALIZED VIEW opensignal.events_raw_mv
 TO opensignal.events_raw
 AS
 WITH
@@ -74,3 +40,12 @@ SELECT
     raw_payload AS raw_json
 FROM opensignal.events_raw_kafka
 WHERE JSONExtractString(message, 'source') = 'wikipedia';
+
+ALTER TABLE opensignal.events_raw
+UPDATE
+    content_id = toString(JSONExtract(JSONExtractRaw(raw_json, 'revision'), 'new', 'Nullable(UInt64)')),
+    parent_content_id = toString(JSONExtract(JSONExtractRaw(raw_json, 'revision'), 'old', 'Nullable(UInt64)')),
+    content_url = nullIf(JSONExtractString(raw_json, 'notify_url'), ''),
+    content_hint = nullIf(JSONExtractString(raw_json, 'comment'), '')
+WHERE source = 'wikipedia';
+

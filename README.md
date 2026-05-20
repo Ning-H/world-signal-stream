@@ -58,3 +58,5 @@ curl "http://localhost:8123/?query=SELECT%20count()%20FROM%20opensignal.events_r
 ```
 
 For continuous ingestion, omit `--max-events`. The producer reconnects to Wikimedia with exponential backoff and publishes malformed parse/normalization failures to `events.dlq`.
+
+Wikipedia edit bodies are not included in the live stream. OpenSignal stores revision references (`content_id`, `parent_content_id`), the diff URL (`content_url`), and the edit comment (`content_hint`) so later workers can fetch diffs only for events worth LLM analysis.
