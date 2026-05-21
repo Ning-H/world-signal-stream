@@ -1,10 +1,74 @@
 # OpenSignal
 
-A live, multi-source dashboard that ingests open public signals and surfaces what the world is paying attention to right now.
+A real-time public-signal analytics platform that ingests Wikipedia edits, GDELT global news, and Hacker News discussions, enriches selected high-value events with an LLM, and surfaces what the world is paying attention to right now.
 
-Status: under construction.
+![OpenSignal cross-source storyboard](docs/screenshots/stage3-hero-storyboard.png)
 
-## Local Infrastructure
+## Why This Exists
+
+Most public-signal tools are either single-source dashboards or expensive enterprise systems. OpenSignal is a local, inspectable version of the same idea: normalize multiple open feeds into one event schema, enrich the high-signal slice with category/sentiment/geography/entities, and cluster topics that appear across independent sources.
+
+This is intentionally honest about signal quality. The dashboard distinguishes strict entity-overlap clusters from exploratory candidates so the demo shows both what works and where more data is needed.
+
+## What It Shows
+
+- Live raw activity across Wikipedia, GDELT, and Hacker News
+- Source health, volume trends, geography coverage, and top titles
+- LLM-enriched category, sentiment, geography, entities, and summaries
+- Cross-source storyboard candidates with source mix bars
+- Stories breaking now, language divergence, and geo sentiment map
+
+## Architecture
+
+```text
+Wikipedia / GDELT / Hacker News
+        -> Kafka events.raw
+        -> ClickHouse raw + rollup tables
+        -> selected-event LLM enrichment
+        -> ClickHouse enriched tables
+        -> entity-overlap topic clustering
+        -> Streamlit dashboard
+```
+
+Core stack: Python, Kafka, ClickHouse, Anthropic Claude Haiku, Streamlit, Docker Compose. The correlation job lives under `flink_jobs/` and is currently a bounded ClickHouse-backed implementation so the clustering behavior can be validated locally before replacing the runner with PyFlink.
+
+## Current Proof Points
+
+- `93,834` raw events ingested locally
+- `484` selected events enriched
+- `0` enriched rows missing category or sentiment
+- `430` enriched rows with extracted geography
+- LLM validation/backfill spend recorded locally: `$0.36878`
+- Enriched rollup queries: `18-26ms` locally
+- Polished cross-source candidate: Google/OpenAI/AI topic, `2` GDELT events + `6` Hacker News events
+- Test suite: `17 passed`
+
+## Demo Caveat
+
+The current local sample has limited overlap because the sources were collected in different short windows. Strict two-entity matching is the high-confidence mode, but it currently produces no cross-source rows on this small sample. The visible cross-source storyboard uses clearly labeled exploratory one-entity matching after filtering broad news-magnet entities.
+
+## Resume Bullet
+
+Built OpenSignal, a real-time public-signal analytics platform that normalizes Wikipedia edits, GDELT global news, and Hacker News discussions into a unified Kafka -> ClickHouse pipeline, applies batched Claude Haiku enrichment for category/sentiment/geography/entity extraction, and clusters enriched events into cross-source topic storyboards with sub-500ms analytical queries in Streamlit.
+
+## Quickstart
+
+```bash
+docker compose up -d
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+docker compose exec -T clickhouse clickhouse-client --multiquery < clickhouse/schema.sql
+docker compose exec -T clickhouse clickhouse-client --multiquery < clickhouse/materialized_views.sql
+docker compose exec -T clickhouse clickhouse-client --multiquery < clickhouse/enrichment_schema.sql
+streamlit run dashboard/app.py --server.port 8502
+```
+
+Then open `http://localhost:8502`.
+
+## Build Notes
+
+### Local Infrastructure
 
 Phase 1.1 brings up the local Kafka, ClickHouse, and Kafka UI services:
 
