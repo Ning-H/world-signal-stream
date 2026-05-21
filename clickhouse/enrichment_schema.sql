@@ -159,6 +159,27 @@ ENGINE = ReplacingMergeTree(last_seen)
 PARTITION BY toDate(bucket)
 ORDER BY (bucket, topic_key);
 
+CREATE TABLE IF NOT EXISTS opensignal.topic_clusters
+(
+    topic_id String,
+    window_start DateTime('UTC'),
+    window_end DateTime('UTC'),
+    top_entities Array(String),
+    category LowCardinality(String),
+    sentiment LowCardinality(String),
+    wikipedia_events UInt64,
+    gdelt_events UInt64,
+    hackernews_events UInt64,
+    total_events UInt64,
+    first_seen DateTime64(3, 'UTC'),
+    last_seen DateTime64(3, 'UTC'),
+    sample_titles Array(String),
+    computed_at DateTime64(3, 'UTC')
+)
+ENGINE = ReplacingMergeTree(computed_at)
+PARTITION BY toDate(window_start)
+ORDER BY (window_start, topic_id);
+
 INSERT INTO opensignal.category_volume_5m
 SELECT
     toStartOfFiveMinutes(timestamp) AS bucket,

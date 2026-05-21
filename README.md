@@ -187,6 +187,28 @@ Stage 2 local snapshot:
 - Enriched rollup query timings on local ClickHouse: category volume `19ms`, geo sentiment `18ms`, top entities `26ms`.
 - Screenshot: `docs/screenshots/stage2-enriched-section.png`.
 
+## Topic Clustering
+
+Stage 3.1 adds entity-overlap topic clustering over enriched events.
+
+```bash
+make correlate
+```
+
+The first local implementation is a bounded ClickHouse-backed job in `flink_jobs/cross_source_correlator.py`. It uses the same entity-overlap algorithm planned for PyFlink, but keeps the first validation loop simple:
+
+- 1-hour sliding windows with 5-minute slide
+- events sharing at least 2 useful normalized entities are connected
+- clusters with at least 3 events are written to `topic_clusters`
+- the current run is source-limited because only GDELT rows have been enriched so far
+
+Current Stage 3.1 snapshot:
+
+- Enriched events loaded for clustering: `377`
+- Topic cluster window rows written: `261`
+- Unique topic examples include Ukraine/Russia sanctions, Venezuela sanctions, Tanzania gender wage gap, Crowsnest Pass separation petition, and Baffinland/Nunavut debt.
+- Cross-source cluster count is currently `0` because the enriched sample is GDELT-only. Enriching selected Wikipedia and Hacker News rows is the next prerequisite before the hero cross-source view becomes meaningful.
+
 ## Bluesky Ingestion
 
 Bluesky Jetstream is available as an optional experimental open social firehose source.

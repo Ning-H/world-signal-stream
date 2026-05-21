@@ -94,6 +94,14 @@ Enriched rows land in `events_enriched` with category, sentiment, geography, ent
 
 Dashboard-facing rollups are stored in `category_volume_5m`, `sentiment_by_geo_15m`, and `top_entities_1h`. `cross_source_topic_overlap_1h` exists as the Stage 3 landing table for topic clusters, but it is intentionally empty until cross-source correlation is implemented.
 
+## Stage 3 Topic Clustering
+
+The first topic clustering job lives in `flink_jobs/cross_source_correlator.py`. It is intentionally a bounded ClickHouse-backed implementation before the PyFlink version so the entity-overlap behavior can be tested quickly on local enriched data.
+
+The v1 algorithm uses 1-hour sliding windows with 5-minute slide. Within each window, events become connected when they share at least two useful normalized entities after generic labels such as `government`, `company`, and `unknown actor` are removed. Connected components with at least three events are emitted to `topic_clusters` with source counts, top entities, category, sentiment, first/last seen timestamps, and sample titles.
+
+Embedding-based clustering is deliberately excluded from v1. It would likely improve semantic grouping, but it adds cost, latency, and operational complexity before we know whether entity overlap is good enough for the portfolio demo.
+
 The content fields are references, not full content:
 
 - `content_id`: source-specific immutable content/version ID, such as a Wikipedia new revision ID.
