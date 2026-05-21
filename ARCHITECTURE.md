@@ -71,6 +71,15 @@ All source producers write normalized JSON events to Kafka topic `events.raw`. S
 
 ClickHouse stores the canonical fields in typed columns and preserves the original source payload as `raw_json`. The Kafka-engine table uses `RawBLOB` plus JSON extraction in the materialized view so the Kafka contract can stay a normal nested JSON object instead of bending around ClickHouse Kafka-engine type constraints.
 
+## Stage 1 Dashboard Storage
+
+The first dashboard queries `events_raw` for the live firehose and uses two small ClickHouse rollup tables for fast charts:
+
+- `source_volume_5m`: event counts by source in 5-minute buckets.
+- `title_activity_5m`: event counts and magnitude sums by source/title in 5-minute buckets.
+
+Both tables are fed by materialized views and can be backfilled from `events_raw` through `clickhouse/materialized_views.sql`.
+
 The content fields are references, not full content:
 
 - `content_id`: source-specific immutable content/version ID, such as a Wikipedia new revision ID.

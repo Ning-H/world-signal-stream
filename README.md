@@ -116,6 +116,30 @@ Initial smoke test:
 - Duplicate prevention: second run produced 0 events and skipped 150 already-seen IDs
 - DLQ additions: 0
 
+## Stage 1 Dashboard
+
+![OpenSignal Stage 1 dashboard](docs/screenshots/stage1-dashboard.png)
+
+Apply the analytical rollups and run the dashboard:
+
+```bash
+docker compose exec -T clickhouse clickhouse-client --multiquery < clickhouse/materialized_views.sql
+pip install -r dashboard/requirements.txt
+streamlit run dashboard/app.py
+```
+
+Or use:
+
+```bash
+make demo
+```
+
+The dashboard includes:
+
+- live event firehose, last 100 events
+- stacked volume by source, last 24 hours
+- top titles by source, last 1 hour
+
 ## Bluesky Ingestion
 
 Bluesky Jetstream is available as an optional experimental open social firehose source.
