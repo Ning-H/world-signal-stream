@@ -4,6 +4,15 @@ A real-time public-signal analytics platform that ingests Wikipedia edits, GDELT
 
 ![OpenSignal cross-source storyboard](docs/screenshots/stage3-hero-storyboard.png)
 
+## Current Phase
+
+OpenSignal is currently at **Stage 3: local cross-source correlation polish**.
+
+- Stage 1 ingestion and raw dashboard: complete locally for Wikipedia, GDELT, and Hacker News.
+- Stage 2 selected-event LLM enrichment: complete locally with Anthropic Claude Haiku, cost tracking, enriched storage, and dashboard rollups.
+- Stage 3 topic clustering and hero dashboard views: complete locally with strict and exploratory entity-overlap clustering.
+- Stage 4 public cloud deployment: not started. This remains optional because it requires explicit cloud/cost approval.
+
 ## Why This Exists
 
 Most public-signal tools are either single-source dashboards or expensive enterprise systems. OpenSignal is a local, inspectable version of the same idea: normalize multiple open feeds into one event schema, enrich the high-signal slice with category/sentiment/geography/entities, and cluster topics that appear across independent sources.
@@ -65,6 +74,15 @@ streamlit run dashboard/app.py --server.port 8502
 ```
 
 Then open `http://localhost:8502`.
+
+Useful local commands:
+
+```bash
+make test
+make correlate
+python -m enrichment.llm_classifier --dry-run --limit 25
+python -m enrichment.llm_classifier --limit 30
+```
 
 ## Build Notes
 
@@ -244,10 +262,13 @@ Current validation snapshot from May 20, 2026:
 - The batched run implies about `$0.65` per 1,000 selected events at the current prompt size.
 - This is acceptable for top-K selected-event enrichment, but still too expensive for full-firehose enrichment at tens of thousands of events/day without tighter summaries, smaller outputs, or sampling.
 
-Stage 2 local snapshot:
+Current Stage 2 local snapshot:
 
-- `394` enriched rows, `0` missing category or sentiment, `378` with extracted geography.
-- Total Anthropic validation/backfill spend recorded locally: `$0.312130` for `374` live enriched rows.
+- `484` enriched rows: `424` GDELT, `30` Hacker News, and `30` Wikipedia.
+- `0` enriched rows missing category or sentiment.
+- `430` enriched rows with extracted geography.
+- Average enrichment confidence: `0.765`.
+- Total Anthropic validation/backfill spend recorded locally: `$0.36878`.
 - Enriched rollup query timings on local ClickHouse: category volume `19ms`, geo sentiment `18ms`, top entities `26ms`.
 - Screenshot: `docs/screenshots/stage2-enriched-section.png`.
 
@@ -264,21 +285,22 @@ The first local implementation is a bounded ClickHouse-backed job in `flink_jobs
 - 1-hour sliding windows with 5-minute slide
 - events sharing at least 2 useful normalized entities are connected
 - clusters with at least 3 events are written to `topic_clusters`
-- the current run is source-limited because only GDELT rows have been enriched so far
+- strict mode uses at least 2 shared entities; exploratory mode uses 1 shared entity with broad entity filtering
 
-Current Stage 3.1 snapshot:
+Current Stage 3 local snapshot:
 
-- Enriched events loaded for clustering: `377`
-- Topic cluster window rows written: `261`
-- Unique topic examples include Ukraine/Russia sanctions, Venezuela sanctions, Tanzania gender wage gap, Crowsnest Pass separation petition, and Baffinland/Nunavut debt.
-- Cross-source cluster count is currently `0` because the enriched sample is GDELT-only. Enriching selected Wikipedia and Hacker News rows is the next prerequisite before the hero cross-source view becomes meaningful.
+- Enriched events available for clustering: `484`.
+- Topic cluster rows written: `1,067`.
+- Unique topic IDs: `1,067`.
+- Cross-source topic rows in the current local sample: `2`.
+- Current polished cross-source candidate: Google/OpenAI/AI topic with `2` GDELT events and `6` Hacker News events.
 
 Stage 3.2 update:
 
 - Balanced enrichment now selects across GDELT, Hacker News, and English article-like Wikipedia edits instead of letting GDELT consume every batch.
 - Added `30` Hacker News and `30` Wikipedia enriched rows in a 90-event balanced run.
 - Correlation uses attention time (`events_raw.ingested_at`) instead of only source event time, which better reflects sources like Hacker News.
-- Strict two-entity overlap is still cleanest but currently produces no cross-source rows on this small local sample.
+- Strict two-entity overlap is still the high-confidence mode, but exploratory one-entity overlap is what produces the visible cross-source candidate on this small local sample.
 - Exploratory one-entity overlap now filters broad news-magnet entities such as Trump, Texas, Israel, Cuba, Washington, and California. The polished storyboard surfaces one credible Google/OpenAI/AI cross-source candidate with `2` GDELT events and `6` Hacker News events, labeled as exploratory using `min_shared_entities`.
 - Dashboard Stage 3 views now include Cross-Source Storyboard, Stories Breaking Now, Language Divergence, and a world choropleth for geo sentiment.
 
