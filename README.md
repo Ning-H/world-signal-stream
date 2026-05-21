@@ -215,7 +215,7 @@ Stage 3.2 update:
 - Added `30` Hacker News and `30` Wikipedia enriched rows in a 90-event balanced run.
 - Correlation uses attention time (`events_raw.ingested_at`) instead of only source event time, which better reflects sources like Hacker News.
 - Strict two-entity overlap is still cleanest but currently produces no cross-source rows on this small local sample.
-- Exploratory one-entity overlap produces `6` cross-source candidate window rows, including a coherent Google/OpenAI/AI cluster with `2` GDELT events and `6` Hacker News events. The dashboard labels these as loose candidates using `min_shared_entities`.
+- Exploratory one-entity overlap now filters broad news-magnet entities such as Trump, Texas, Israel, Cuba, Washington, and California. The polished storyboard surfaces one credible Google/OpenAI/AI cross-source candidate with `2` GDELT events and `6` Hacker News events, labeled as exploratory using `min_shared_entities`.
 - Dashboard Stage 3 views now include Cross-Source Storyboard, Stories Breaking Now, Language Divergence, and a world choropleth for geo sentiment.
 
 ## Bluesky Ingestion

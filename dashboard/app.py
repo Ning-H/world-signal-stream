@@ -419,12 +419,24 @@ def render_topic_storyboard() -> None:
 
     summary = query_df(
         """
+        WITH topics AS
+        (
+            SELECT
+                arrayStringConcat(top_entities, ', ') AS topic,
+                max(wikipedia_events) AS wikipedia_events,
+                max(gdelt_events) AS gdelt_events,
+                max(hackernews_events) AS hackernews_events,
+                min(min_shared_entities) AS min_shared_entities,
+                max(computed_at) AS latest_computed
+            FROM topic_clusters
+            GROUP BY topic
+        )
         SELECT
             count() AS clusters,
             countIf((wikipedia_events > 0) + (gdelt_events > 0) + (hackernews_events > 0) >= 2) AS cross_source,
-            max(computed_at) AS latest_computed,
-            any(min_shared_entities) AS min_shared_entities
-        FROM topic_clusters
+            max(latest_computed) AS latest_computed,
+            min(min_shared_entities) AS min_shared_entities
+        FROM topics
         """
     )
     if summary.empty or int(summary["clusters"].iloc[0]) == 0:
@@ -433,15 +445,31 @@ def render_topic_storyboard() -> None:
 
     row = summary.iloc[0]
     cols = st.columns(4)
-    cols[0].metric("Topic Windows", f"{int(row['clusters']):,}")
-    cols[1].metric("Cross-Source", f"{int(row['cross_source']):,}")
-    cols[2].metric("Match Threshold", f"{int(row['min_shared_entities'])} entity")
+    cols[0].metric("Unique Topics", f"{int(row['clusters']):,}")
+    cols[1].metric("Cross-Source Topics", f"{int(row['cross_source']):,}")
+    cols[2].metric("Min Shared Entities", f"{int(row['min_shared_entities'])}")
     cols[3].metric("Latest Computed", str(row["latest_computed"]))
 
     clusters = query_df(
         """
+        WITH topics AS
+        (
+            SELECT
+                arrayStringConcat(top_entities, ', ') AS topic,
+                any(category) AS category,
+                any(sentiment) AS sentiment,
+                max(wikipedia_events) AS wikipedia_events,
+                max(gdelt_events) AS gdelt_events,
+                max(hackernews_events) AS hackernews_events,
+                max(total_events) AS total_events,
+                min(min_shared_entities) AS min_shared_entities,
+                any(sample_titles) AS sample_titles,
+                max(window_start) AS latest_window
+            FROM topic_clusters
+            GROUP BY topic
+        )
         SELECT
-            arrayStringConcat(top_entities, ', ') AS topic,
+            topic,
             category,
             sentiment,
             wikipedia_events,
@@ -449,17 +477,28 @@ def render_topic_storyboard() -> None:
             hackernews_events,
             total_events,
             min_shared_entities,
+            multiIf(min_shared_entities >= 2, 'strict', 'exploratory') AS evidence,
             arrayStringConcat(sample_titles, ' | ') AS samples
-        FROM topic_clusters
+        FROM topics
+        WHERE (wikipedia_events > 0) + (gdelt_events > 0) + (hackernews_events > 0) >= 2
         ORDER BY
-            ((wikipedia_events > 0) + (gdelt_events > 0) + (hackernews_events > 0)) DESC,
             total_events DESC,
-            window_start DESC
+            latest_window DESC
         LIMIT 20
         """
     )
     if clusters.empty:
+        st.caption("No cross-source topic candidates yet. Continue enriching selected Wikipedia and Hacker News rows, then rerun correlation.")
         return
+
+    for _, row in clusters.head(5).iterrows():
+        source_bits = [
+            f"Wikipedia {int(row['wikipedia_events'])}",
+            f"GDELT {int(row['gdelt_events'])}",
+            f"Hacker News {int(row['hackernews_events'])}",
+        ]
+        st.write(f"**{row['topic']}**")
+        st.caption(f"{row['evidence']} evidence · " + " · ".join(source_bits))
 
     source_mix = clusters.melt(
         id_vars=["topic"],
@@ -482,7 +521,7 @@ def render_topic_storyboard() -> None:
     st.plotly_chart(fig, use_container_width=True)
 
     st.dataframe(
-        clusters[["topic", "category", "sentiment", "total_events", "min_shared_entities", "samples"]],
+        clusters[["topic", "category", "sentiment", "total_events", "evidence", "samples"]],
         use_container_width=True,
         hide_index=True,
     )
@@ -494,18 +533,25 @@ def render_breaking_now() -> None:
 
     df = query_df(
         """
+        WITH recent AS
+        (
+            SELECT *
+            FROM topic_clusters
+            WHERE window_start >= (SELECT max(window_start) FROM topic_clusters) - INTERVAL 30 MINUTE
+        )
         SELECT
-            window_start,
             arrayStringConcat(top_entities, ', ') AS topic,
-            category,
-            sentiment,
-            total_events,
-            wikipedia_events,
-            gdelt_events,
-            hackernews_events
-        FROM topic_clusters
-        WHERE window_start >= (SELECT max(window_start) FROM topic_clusters) - INTERVAL 30 MINUTE
-        ORDER BY total_events DESC, window_start DESC
+            any(category) AS category,
+            any(sentiment) AS sentiment,
+            max(total_events) AS total_events,
+            max(wikipedia_events) AS wikipedia_events,
+            max(gdelt_events) AS gdelt_events,
+            max(hackernews_events) AS hackernews_events,
+            max(window_start) AS latest_window,
+            min(min_shared_entities) AS min_shared_entities
+        FROM recent
+        GROUP BY topic
+        ORDER BY total_events DESC, latest_window DESC
         LIMIT 15
         """
     )

@@ -104,6 +104,8 @@ Embedding-based clustering is deliberately excluded from v1. It would likely imp
 
 Stage 3.2 surfaces both strict and exploratory matching honestly. Strict matching uses at least two shared entities and is the default for high-confidence clusters. Exploratory matching can use one shared entity for cross-source discovery on sparse local samples; rows carry `min_shared_entities` so the dashboard can label these candidates instead of presenting them as equally strong evidence.
 
+Exploratory matching also removes broad news-magnet entities such as Trump, Texas, Israel, Cuba, Washington, and California. Those entities are often useful context, but they are too broad to be reliable one-entity bridges across sources.
+
 The content fields are references, not full content:
 
 - `content_id`: source-specific immutable content/version ID, such as a Wikipedia new revision ID.

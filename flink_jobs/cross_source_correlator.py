@@ -44,6 +44,12 @@ GENERIC_ENTITIES = {
     "senator",
     "mayor",
     "attorney",
+    "trump",
+    "israel",
+    "cuba",
+    "texas",
+    "washington",
+    "california",
 }
 
 

@@ -29,7 +29,7 @@ def test_useful_entities_drops_generic_terms() -> None:
     entities = useful_entities(("Government", "Trump", "US", "Federal Judge"))
 
     assert "government" not in entities
-    assert "trump" in entities
+    assert "trump" not in entities
     assert "federal judge" in entities
 
 
@@ -37,8 +37,8 @@ def test_cluster_events_connects_events_with_two_shared_entities() -> None:
     now = datetime(2026, 5, 21, 12, 0, tzinfo=UTC)
     clusters = cluster_events(
         [
-            event("a", "gdelt", now, ("Trump", "Federal Judge", "Washington DC")),
-            event("b", "wikipedia", now + timedelta(minutes=3), ("Trump", "Federal Judge", "Illinois")),
+            event("a", "gdelt", now, ("Federal Judge", "Washington DC", "Illinois Firearm ID Law")),
+            event("b", "wikipedia", now + timedelta(minutes=3), ("Federal Judge", "Illinois Firearm ID Law", "Illinois")),
             event("c", "hackernews", now, ("STMicroelectronics", "Geneva")),
         ],
         min_shared_entities=2,
