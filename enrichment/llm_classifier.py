@@ -175,21 +175,41 @@ def event_prompt_payload(event: RawEvent) -> dict[str, Any]:
     }
 
 
+def enrichment_result_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "category": {"type": "string", "enum": sorted(CATEGORIES)},
+            "sentiment": {"type": "string", "enum": sorted(SENTIMENTS)},
+            "geography": {"type": "array", "items": {"type": "string"}},
+            "entities": {"type": "array", "items": {"type": "string"}},
+            "confidence": {"type": "number"},
+            "summary": {"type": "string"},
+        },
+        "required": ["category", "sentiment", "geography", "entities", "confidence", "summary"],
+    }
+
+
 def enrichment_tool_schema() -> dict[str, Any]:
     return {
-        "name": "record_enrichment",
-        "description": "Record category, sentiment, geography, entities, confidence, and summary for a public signal event.",
+        "name": "record_enrichments",
+        "description": "Record category, sentiment, geography, entities, confidence, and summary for public signal events.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "category": {"type": "string", "enum": sorted(CATEGORIES)},
-                "sentiment": {"type": "string", "enum": sorted(SENTIMENTS)},
-                "geography": {"type": "array", "items": {"type": "string"}},
-                "entities": {"type": "array", "items": {"type": "string"}},
-                "confidence": {"type": "number"},
-                "summary": {"type": "string"},
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "event_id": {"type": "string"},
+                            **enrichment_result_schema()["properties"],
+                        },
+                        "required": ["event_id", *enrichment_result_schema()["required"]],
+                    },
+                }
             },
-            "required": ["category", "sentiment", "geography", "entities", "confidence", "summary"],
+            "required": ["events"],
         },
     }
 
@@ -223,27 +243,38 @@ def validate_enrichment(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def extract_tool_result(message: Any) -> dict[str, Any]:
+def extract_tool_result(message: Any) -> dict[str, dict[str, Any]]:
     for block in message.content:
-        if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == "record_enrichment":
-            return validate_enrichment(block.input)
-    raise ValueError("Anthropic response did not include record_enrichment tool use")
+        if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == "record_enrichments":
+            events = block.input.get("events")
+            if not isinstance(events, list):
+                raise ValueError("record_enrichments.events must be an array")
+            return {
+                str(item.get("event_id")): validate_enrichment(item)
+                for item in events
+                if isinstance(item, dict) and item.get("event_id")
+            }
+    raise ValueError("Anthropic response did not include record_enrichments tool use")
 
 
-def classify_event(client: anthropic.Anthropic, event: RawEvent, model: str) -> tuple[dict[str, Any], int, int]:
+def classify_event_batch(
+    client: anthropic.Anthropic,
+    events: list[RawEvent],
+    model: str,
+) -> tuple[dict[str, dict[str, Any]], int, int]:
     system_prompt = "\n\n".join([read_prompt("categorize.txt"), read_prompt("geo_entity.txt")])
     message = client.messages.create(
         model=model,
-        max_tokens=600,
+        max_tokens=400 * max(1, len(events)),
         temperature=0,
         system=system_prompt,
         tools=[enrichment_tool_schema()],
-        tool_choice={"type": "tool", "name": "record_enrichment"},
+        tool_choice={"type": "tool", "name": "record_enrichments"},
         messages=[
             {
                 "role": "user",
-                "content": "Classify this OpenSignal event:\n"
-                + json.dumps(event_prompt_payload(event), ensure_ascii=False),
+                "content": "Classify these OpenSignal events. Return exactly one result for each event_id:\n"
+                + json.dumps([event_prompt_payload(event) for event in events], ensure_ascii=False),
             }
         ],
     )
@@ -357,9 +388,34 @@ def insert_dlq(event: RawEvent | None, reason: str, error: Exception, payload: A
     )
 
 
+def enrichment_row(event: RawEvent, enrichment: dict[str, Any], model: str) -> dict[str, Any]:
+    return {
+        "event_id": event.event_id,
+        "source": event.source,
+        "source_subtype": event.source_subtype,
+        "timestamp": event.timestamp,
+        "title": event.title,
+        "url": event.url,
+        "category": enrichment["category"],
+        "sentiment": enrichment["sentiment"],
+        "geography": enrichment["geography"],
+        "entities": enrichment["entities"],
+        "confidence": enrichment["confidence"],
+        "summary": enrichment["summary"],
+        "model": model,
+        "prompt_version": PROMPT_VERSION,
+        "enriched_at": datetime.now(UTC),
+    }
+
+
+def batched(items: list[RawEvent], size: int) -> list[list[RawEvent]]:
+    return [items[index : index + size] for index in range(0, len(items), size)]
+
+
 def run(limit: int, dry_run: bool) -> dict[str, Any]:
     provider = os.getenv("LLM_PROVIDER", "anthropic")
     model = os.getenv("LLM_MODEL", DEFAULT_MODEL)
+    batch_size = max(1, int(os.getenv("LLM_BATCH_SIZE", "10")))
     if provider != "anthropic" and not dry_run:
         raise ValueError(f"Unsupported LLM_PROVIDER for live enrichment: {provider}")
 
@@ -370,48 +426,41 @@ def run(limit: int, dry_run: bool) -> dict[str, Any]:
     total_output_tokens = 0
     client = None if dry_run else anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     local_cache: dict[str, dict[str, Any]] = {}
+    pending_live: list[RawEvent] = []
 
     for event in events:
         try:
             key = event_cache_key(event)
             if key in local_cache:
                 enrichment = local_cache[key]
-                input_tokens = 0
-                output_tokens = 0
+                enriched_rows.append(enrichment_row(event, enrichment, "dry-run" if dry_run else model))
             elif dry_run:
                 enrichment = dry_run_enrichment(event)
-                input_tokens = 0
-                output_tokens = 0
                 local_cache[key] = enrichment
+                enriched_rows.append(enrichment_row(event, enrichment, "dry-run"))
             else:
-                enrichment, input_tokens, output_tokens = classify_event(client, event, model)  # type: ignore[arg-type]
-                local_cache[key] = enrichment
-                time.sleep(0.1)
-
-            total_input_tokens += input_tokens
-            total_output_tokens += output_tokens
-            enriched_rows.append(
-                {
-                    "event_id": event.event_id,
-                    "source": event.source,
-                    "source_subtype": event.source_subtype,
-                    "timestamp": event.timestamp,
-                    "title": event.title,
-                    "url": event.url,
-                    "category": enrichment["category"],
-                    "sentiment": enrichment["sentiment"],
-                    "geography": enrichment["geography"],
-                    "entities": enrichment["entities"],
-                    "confidence": enrichment["confidence"],
-                    "summary": enrichment["summary"],
-                    "model": "dry-run" if dry_run else model,
-                    "prompt_version": PROMPT_VERSION,
-                    "enriched_at": datetime.now(UTC),
-                }
-            )
+                pending_live.append(event)
         except Exception as exc:  # noqa: BLE001 - route bad provider/model rows to DLQ
             LOGGER.exception("Failed to enrich event %s", event.event_id)
             insert_dlq(event, "enrichment_failed", exc, event_prompt_payload(event))
+
+    for batch in batched(pending_live, batch_size):
+        try:
+            results, input_tokens, output_tokens = classify_event_batch(client, batch, model)  # type: ignore[arg-type]
+            total_input_tokens += input_tokens
+            total_output_tokens += output_tokens
+            for event in batch:
+                enrichment = results.get(event.event_id)
+                if not enrichment:
+                    insert_dlq(event, "missing_batch_result", ValueError("Missing event_id in LLM batch response"), results)
+                    continue
+                local_cache[event_cache_key(event)] = enrichment
+                enriched_rows.append(enrichment_row(event, enrichment, model))
+            time.sleep(0.1)
+        except Exception as exc:  # noqa: BLE001 - route bad provider/model rows to DLQ
+            LOGGER.exception("Failed to enrich batch of %s events", len(batch))
+            for event in batch:
+                insert_dlq(event, "enrichment_failed", exc, event_prompt_payload(event))
 
     insert_enrichments(enriched_rows)
     insert_cost(
@@ -430,6 +479,7 @@ def run(limit: int, dry_run: bool) -> dict[str, Any]:
         "output_tokens": total_output_tokens,
         "estimated_cost_usd": estimate_cost(total_input_tokens, total_output_tokens),
         "cache_size": len(local_cache),
+        "batch_size": batch_size,
     }
 
 

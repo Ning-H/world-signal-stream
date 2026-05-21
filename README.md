@@ -171,7 +171,14 @@ Live Anthropic run:
 python -m enrichment.llm_classifier --limit 25
 ```
 
-The default model is `claude-haiku-4-5-20251001`, which is the Haiku model currently visible to this Anthropic workspace. Costs are recorded in `opensignal.enrichment_costs` using Anthropic token usage and the `LLM_INPUT_PRICE_PER_MTOK` / `LLM_OUTPUT_PRICE_PER_MTOK` settings from `.env`.
+The default model is `claude-haiku-4-5-20251001`, which is the Haiku model currently visible to this Anthropic workspace. Costs are recorded in `opensignal.enrichment_costs` using Anthropic token usage and the `LLM_INPUT_PRICE_PER_MTOK` / `LLM_OUTPUT_PRICE_PER_MTOK` settings from `.env`. Live enrichment batches up to `LLM_BATCH_SIZE=10` events per model call.
+
+Current validation snapshot from May 20, 2026:
+
+- 50-event single-event-call proof run: 50/50 enriched, 68,764 input tokens, 8,033 output tokens, estimated cost `$0.087143`.
+- 20-event batched proof run: 20/20 enriched in 2 Anthropic calls, 6,352 input tokens, 1,997 output tokens, estimated cost `$0.013070`.
+- The batched run implies about `$0.65` per 1,000 selected events at the current prompt size.
+- This is acceptable for top-K selected-event enrichment, but still too expensive for full-firehose enrichment at tens of thousands of events/day without tighter summaries, smaller outputs, or sampling.
 
 ## Bluesky Ingestion
 

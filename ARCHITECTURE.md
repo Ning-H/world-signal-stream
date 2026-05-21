@@ -88,6 +88,8 @@ The first enrichment pass is selective rather than firehose-wide:
 - Hacker News stories are compact and high-signal for tech/AI discussion.
 - Wikipedia enrichment is limited to high-magnitude, article-like edits because the raw stream contains substantial maintenance traffic.
 
+LLM calls are batched by `LLM_BATCH_SIZE` to avoid repeating the prompt for every event. The first measured batched run enriched 20 selected events in 2 Anthropic calls for about `$0.013`, which is a better fit for top-K enrichment than full-firehose enrichment.
+
 Enriched rows land in `events_enriched` with category, sentiment, geography, entities, confidence, and summary. Cost records land in `enrichment_costs` using provider token usage. Failed schema validations or provider errors land in `enrichment_dlq`, and the selector skips recent DLQ rows so a bad model response does not block the next batch.
 
 The content fields are references, not full content:
