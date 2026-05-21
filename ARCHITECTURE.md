@@ -99,3 +99,15 @@ Full content and diffs should be fetched later only for selected high-value even
 - `magnitude` uses `NumMentions`, which is the best first-pass attention measure in the event export.
 - `content_url` stores `SOURCEURL`, while `content_id` stores `GLOBALEVENTID`.
 - Rows with `EventRootCode = 03` are filtered as low-intensity verbal cooperation noise for this dashboard's first version.
+
+## Bluesky Normalization Decisions
+
+Reddit ingestion is skipped in Stage 1 because classic API app creation is blocked by the current Reddit developer flow. Bluesky Jetstream is used as the open social source instead.
+
+- `event_id` is `bluesky:{did}:{rkey}`.
+- `source_subtype` is `post`.
+- `timestamp` uses the post record's `createdAt`, falling back to Jetstream `time_us`.
+- `language` uses the first value in the post record's `langs` array.
+- `magnitude` is `0` at ingestion because Jetstream create events do not include like/repost counts.
+- `content_id` is the AT URI, and `content_url` is the public `bsky.app` post URL.
+- `content_hint` stores the post text so the LLM layer can classify social signals without a second content fetch.

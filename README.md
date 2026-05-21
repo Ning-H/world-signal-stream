@@ -99,3 +99,21 @@ The GDELT producer was validated against live `lastupdate.txt` exports on 2026-0
 - DLQ additions from GDELT: 0
 
 The local machine paused during the longer poll run and later resumed; the producer continued polling and processed the latest available export without manual repair. GDELT publication timing can lag the nominal 15-minute cadence, so downstream monitoring should treat missing intervals as a normal source-side condition unless several intervals are absent.
+
+## Bluesky Ingestion
+
+Reddit's classic API setup is currently blocked by account/application friction, so Stage 1 uses Bluesky Jetstream as the open social firehose source instead.
+
+```bash
+python -m ingestion.bluesky_producer --max-events 500
+```
+
+The producer connects to Jetstream with a collection filter for `app.bsky.feed.post`, keeps English posts by default, normalizes them into `events.raw`, and stores the post text in `content_hint` for later enrichment.
+
+Initial smoke test:
+
+- Events produced and stored: 200
+- Unique Bluesky event IDs: 200
+- DLQ additions: 0
+
+As expected for an open social firehose, content quality is mixed. Later dashboard and enrichment stages should prioritize posts through volume, cross-source overlap, account/list filters, or lightweight moderation heuristics instead of surfacing the raw feed without ranking.
