@@ -15,4 +15,5 @@ Guidance:
 - Use "neutral" for routine maintenance, index pages, generic metadata, or unclear context.
 - Prefer "tech" for software, AI, infrastructure, startups, cybersecurity, chips, apps, developer tools.
 - Prefer "science" for research findings, papers, universities, space, biology, medicine research.
+- Map crime, policing, arrests, courts, violence, or public safety incidents to "conflict".
 - Map education/school/university operations to "culture" unless the event is clearly about research, then use "science".

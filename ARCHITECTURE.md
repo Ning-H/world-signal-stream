@@ -92,6 +92,8 @@ LLM calls are batched by `LLM_BATCH_SIZE` to avoid repeating the prompt for ever
 
 Enriched rows land in `events_enriched` with category, sentiment, geography, entities, confidence, and summary. Cost records land in `enrichment_costs` using provider token usage. Failed schema validations or provider errors land in `enrichment_dlq`, and the selector skips recent DLQ rows so a bad model response does not block the next batch.
 
+Dashboard-facing rollups are stored in `category_volume_5m`, `sentiment_by_geo_15m`, and `top_entities_1h`. `cross_source_topic_overlap_1h` exists as the Stage 3 landing table for topic clusters, but it is intentionally empty until cross-source correlation is implemented.
+
 The content fields are references, not full content:
 
 - `content_id`: source-specific immutable content/version ID, such as a Wikipedia new revision ID.

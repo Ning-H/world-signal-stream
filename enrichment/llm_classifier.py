@@ -243,17 +243,23 @@ def validate_enrichment(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def extract_tool_result(message: Any) -> dict[str, dict[str, Any]]:
+def extract_tool_result(message: Any) -> tuple[dict[str, dict[str, Any]], dict[str, tuple[Exception, dict[str, Any]]]]:
     for block in message.content:
         if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == "record_enrichments":
             events = block.input.get("events")
             if not isinstance(events, list):
                 raise ValueError("record_enrichments.events must be an array")
-            return {
-                str(item.get("event_id")): validate_enrichment(item)
-                for item in events
-                if isinstance(item, dict) and item.get("event_id")
-            }
+            results: dict[str, dict[str, Any]] = {}
+            item_errors: dict[str, tuple[Exception, dict[str, Any]]] = {}
+            for item in events:
+                if not isinstance(item, dict) or not item.get("event_id"):
+                    continue
+                event_id = str(item["event_id"])
+                try:
+                    results[event_id] = validate_enrichment(item)
+                except Exception as exc:  # noqa: BLE001 - preserve bad item for the DLQ
+                    item_errors[event_id] = (exc, item)
+            return results, item_errors
     raise ValueError("Anthropic response did not include record_enrichments tool use")
 
 
@@ -261,7 +267,7 @@ def classify_event_batch(
     client: anthropic.Anthropic,
     events: list[RawEvent],
     model: str,
-) -> tuple[dict[str, dict[str, Any]], int, int]:
+) -> tuple[dict[str, dict[str, Any]], dict[str, tuple[Exception, dict[str, Any]]], int, int]:
     system_prompt = "\n\n".join([read_prompt("categorize.txt"), read_prompt("geo_entity.txt")])
     message = client.messages.create(
         model=model,
@@ -280,7 +286,8 @@ def classify_event_batch(
     )
     input_tokens = int(getattr(message.usage, "input_tokens", 0) or 0)
     output_tokens = int(getattr(message.usage, "output_tokens", 0) or 0)
-    return extract_tool_result(message), input_tokens, output_tokens
+    results, item_errors = extract_tool_result(message)
+    return results, item_errors, input_tokens, output_tokens
 
 
 def dry_run_enrichment(event: RawEvent) -> dict[str, Any]:
@@ -446,10 +453,14 @@ def run(limit: int, dry_run: bool) -> dict[str, Any]:
 
     for batch in batched(pending_live, batch_size):
         try:
-            results, input_tokens, output_tokens = classify_event_batch(client, batch, model)  # type: ignore[arg-type]
+            results, item_errors, input_tokens, output_tokens = classify_event_batch(client, batch, model)  # type: ignore[arg-type]
             total_input_tokens += input_tokens
             total_output_tokens += output_tokens
             for event in batch:
+                if event.event_id in item_errors:
+                    error, payload = item_errors[event.event_id]
+                    insert_dlq(event, "schema_validation_failed", error, payload)
+                    continue
                 enrichment = results.get(event.event_id)
                 if not enrichment:
                     insert_dlq(event, "missing_batch_result", ValueError("Missing event_id in LLM batch response"), results)

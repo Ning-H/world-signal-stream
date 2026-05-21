@@ -314,6 +314,98 @@ def render_takeaways() -> None:
     )
 
 
+def render_enriched_signals() -> None:
+    st.subheader("Enriched Signals")
+    st.caption("Selected high-value events are classified by category, sentiment, geography, and entities. This is intentionally top-K enrichment, not full-firehose enrichment.")
+
+    coverage = query_df(
+        """
+        SELECT
+            count() AS enriched_events,
+            countIf(category != '') AS with_category,
+            countIf(sentiment != '') AS with_sentiment,
+            countIf(length(geography) > 0) AS with_geography,
+            round(avg(confidence), 3) AS avg_confidence,
+            max(enriched_at) AS latest_enriched
+        FROM events_enriched
+        """
+    )
+    if coverage.empty or int(coverage["enriched_events"].iloc[0]) == 0:
+        st.info("No enriched events yet. Run `python -m enrichment.llm_classifier --limit 25`.")
+        return
+
+    metrics = st.columns(4)
+    row = coverage.iloc[0]
+    metrics[0].metric("Enriched Events", f"{int(row['enriched_events']):,}")
+    metrics[1].metric("With Geography", f"{int(row['with_geography']):,}")
+    metrics[2].metric("Avg Confidence", f"{float(row['avg_confidence']):.2f}")
+    metrics[3].metric("Latest Enriched", str(row["latest_enriched"]))
+
+    category_df = query_df(
+        """
+        SELECT
+            category,
+            sentiment,
+            sum(event_count) AS events
+        FROM category_volume_5m
+        WHERE bucket >= now() - INTERVAL 24 HOUR
+        GROUP BY category, sentiment
+        ORDER BY events DESC
+        LIMIT 30
+        """
+    )
+    geo_df = query_df(
+        """
+        SELECT
+            geography,
+            sum(event_count) AS events,
+            round(sum(sentiment_score_sum) / greatest(sum(event_count), 1), 3) AS sentiment_score
+        FROM sentiment_by_geo_15m
+        WHERE bucket >= now() - INTERVAL 24 HOUR
+        GROUP BY geography
+        ORDER BY events DESC
+        LIMIT 20
+        """
+    )
+    entity_df = query_df(
+        """
+        SELECT
+            entity,
+            category,
+            sum(event_count) AS events
+        FROM top_entities_1h
+        WHERE bucket >= now() - INTERVAL 24 HOUR
+        GROUP BY entity, category
+        ORDER BY events DESC
+        LIMIT 20
+        """
+    )
+
+    cols = st.columns(3)
+    with cols[0]:
+        st.markdown("**Category x Sentiment**")
+        if category_df.empty:
+            st.caption("No category rollups yet.")
+        else:
+            fig = px.bar(category_df, x="events", y="category", color="sentiment", orientation="h")
+            fig.update_layout(height=360, margin=dict(l=12, r=12, t=20, b=12), yaxis_title="", xaxis_title="Events")
+            st.plotly_chart(fig, use_container_width=True)
+    with cols[1]:
+        st.markdown("**Geo Sentiment**")
+        if geo_df.empty:
+            st.caption("No geography rollups yet.")
+        else:
+            fig = px.bar(geo_df, x="geography", y="sentiment_score", color="events")
+            fig.update_layout(height=360, margin=dict(l=12, r=12, t=20, b=12), xaxis_title="", yaxis_title="Net sentiment")
+            st.plotly_chart(fig, use_container_width=True)
+    with cols[2]:
+        st.markdown("**Top Entities**")
+        if entity_df.empty:
+            st.caption("No entity rollups yet.")
+        else:
+            st.dataframe(entity_df, use_container_width=True, hide_index=True)
+
+
 def main() -> None:
     st.set_page_config(
         page_title="OpenSignal",
@@ -341,6 +433,8 @@ def main() -> None:
     render_volume()
     st.divider()
     render_geography()
+    st.divider()
+    render_enriched_signals()
     st.divider()
     render_top_titles()
 

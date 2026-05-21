@@ -180,6 +180,13 @@ Current validation snapshot from May 20, 2026:
 - The batched run implies about `$0.65` per 1,000 selected events at the current prompt size.
 - This is acceptable for top-K selected-event enrichment, but still too expensive for full-firehose enrichment at tens of thousands of events/day without tighter summaries, smaller outputs, or sampling.
 
+Stage 2 local snapshot:
+
+- `394` enriched rows, `0` missing category or sentiment, `378` with extracted geography.
+- Total Anthropic validation/backfill spend recorded locally: `$0.312130` for `374` live enriched rows.
+- Enriched rollup query timings on local ClickHouse: category volume `19ms`, geo sentiment `18ms`, top entities `26ms`.
+- Screenshot: `docs/screenshots/stage2-enriched-section.png`.
+
 ## Bluesky Ingestion
 
 Bluesky Jetstream is available as an optional experimental open social firehose source.
