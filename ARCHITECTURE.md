@@ -100,9 +100,22 @@ Full content and diffs should be fetched later only for selected high-value even
 - `content_url` stores `SOURCEURL`, while `content_id` stores `GLOBALEVENTID`.
 - Rows with `EventRootCode = 03` are filtered as low-intensity verbal cooperation noise for this dashboard's first version.
 
+## Hacker News Normalization Decisions
+
+Reddit ingestion is skipped in Stage 1 because classic API app creation is blocked by the current Reddit developer flow. Hacker News is used as the credential-free discussion source instead.
+
+- `event_id` is `hackernews:{id}`.
+- `source_subtype` is `story:{list_name}`, such as `story:top`, `story:new`, or `story:best`.
+- `timestamp` uses the HN story `time`.
+- `language` is `en`.
+- `magnitude` is `score + descendants`, combining voting and comment attention.
+- `content_id` is the HN item ID.
+- `content_url` is the external story URL, falling back to the HN item discussion URL.
+- `content_hint` stores the title plus story text when available.
+
 ## Bluesky Normalization Decisions
 
-Reddit ingestion is skipped in Stage 1 because classic API app creation is blocked by the current Reddit developer flow. Bluesky Jetstream is used as the open social source instead.
+Bluesky Jetstream is implemented as an optional experimental source, but is not the default Stage 1 social/discussion signal because raw firehose quality is noisy.
 
 - `event_id` is `bluesky:{did}:{rkey}`.
 - `source_subtype` is `post`.

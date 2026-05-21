@@ -100,9 +100,25 @@ The GDELT producer was validated against live `lastupdate.txt` exports on 2026-0
 
 The local machine paused during the longer poll run and later resumed; the producer continued polling and processed the latest available export without manual repair. GDELT publication timing can lag the nominal 15-minute cadence, so downstream monitoring should treat missing intervals as a normal source-side condition unless several intervals are absent.
 
+## Hacker News Ingestion
+
+Phase 1.4 uses Hacker News as the third Stage 1 source after Reddit's classic API setup proved too frictiony for a local portfolio build.
+
+```bash
+python -m ingestion.hackernews_producer --once
+```
+
+The producer polls the Firebase API for `top`, `new`, and `best` stories, normalizes stories into `events.raw`, and uses a local SQLite marker at `data/hackernews_state.sqlite3` to avoid duplicate ingestion. `magnitude` is `score + descendants`, so high-discussion stories sort above low-attention links.
+
+Initial smoke test:
+
+- Events produced and stored: 132 unique stories from 150 fetched IDs
+- Duplicate prevention: second run produced 0 events and skipped 150 already-seen IDs
+- DLQ additions: 0
+
 ## Bluesky Ingestion
 
-Reddit's classic API setup is currently blocked by account/application friction, so Stage 1 uses Bluesky Jetstream as the open social firehose source instead.
+Bluesky Jetstream is available as an optional experimental open social firehose source.
 
 ```bash
 python -m ingestion.bluesky_producer --max-events 500
@@ -116,4 +132,4 @@ Initial smoke test:
 - Unique Bluesky event IDs: 200
 - DLQ additions: 0
 
-As expected for an open social firehose, content quality is mixed. Later dashboard and enrichment stages should prioritize posts through volume, cross-source overlap, account/list filters, or lightweight moderation heuristics instead of surfacing the raw feed without ranking.
+As expected for an open social firehose, content quality is mixed. It is not the default Stage 1 source; Hacker News is the stable third source for the local dashboard.
