@@ -16,6 +16,11 @@ SOURCE_COLORS = {
     "hackernews": "#f59e0b",
 }
 SOURCES = ["wikipedia", "gdelt", "hackernews"]
+SOURCE_LABELS = {
+    "wikipedia": "Wikipedia",
+    "gdelt": "GDELT",
+    "hackernews": "Hacker News",
+}
 
 
 @st.cache_resource
@@ -32,6 +37,40 @@ def clickhouse_client():
 @st.cache_data(ttl=5)
 def query_df(sql: str) -> pd.DataFrame:
     return clickhouse_client().query_df(sql)
+
+
+def source_label(source: str) -> str:
+    return SOURCE_LABELS.get(source, source.title())
+
+
+def render_source_health() -> None:
+    df = query_df(
+        """
+        SELECT
+            source,
+            count() AS events,
+            uniqExact(event_id) AS unique_events,
+            max(ingested_at) AS latest_ingested,
+            countIf(geography_hint IS NOT NULL) AS with_geo
+        FROM events_raw
+        GROUP BY source
+        ORDER BY source
+        """
+    )
+    if df.empty:
+        st.info("No source data yet.")
+        return
+
+    df["source"] = df["source"].map(source_label)
+    df["geo_pct"] = (100 * df["with_geo"] / df["events"]).round(1)
+    df["duplicate_rows"] = df["events"] - df["unique_events"]
+    st.subheader("Source Health")
+    st.caption("Three stable public sources are flowing locally. Freshness differs because producers are run manually in Stage 1.")
+    st.dataframe(
+        df[["source", "events", "unique_events", "duplicate_rows", "with_geo", "geo_pct", "latest_ingested"]],
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
 def render_metrics() -> None:
@@ -55,7 +94,7 @@ def render_metrics() -> None:
         latest = row["latest"].iloc[0] if not row.empty else "none"
         with_geo = int(row["with_geo"].iloc[0]) if not row.empty else 0
         geo_label = f"{with_geo:,} geo hints"
-        cols[index].metric(source.title(), f"{events:,}", delta=geo_label, help=f"Latest local ingest: {latest}")
+        cols[index].metric(source_label(source), f"{events:,}", delta=geo_label, help=f"Latest local ingest: {latest}")
 
 
 def render_firehose() -> None:
@@ -141,28 +180,56 @@ def render_volume() -> None:
     st.plotly_chart(fig, use_container_width=True)
 
 
-def top_titles(source: str, label: str, limit: int = 15) -> None:
-    df = query_df(
-        f"""
-        WITH latest AS
-        (
-            SELECT max(bucket) AS max_bucket
-            FROM title_activity_5m
-            WHERE source = '{source}'
+def top_titles(source: str, label: str, limit: int = 12) -> None:
+    if source == "wikipedia":
+        df = query_df(
+            f"""
+            WITH latest AS
+            (
+                SELECT max(timestamp) AS max_timestamp
+                FROM events_raw
+                WHERE source = 'wikipedia'
+            )
+            SELECT
+                title,
+                count() AS events,
+                sum(coalesce(magnitude, 0)) AS magnitude
+            FROM events_raw
+            WHERE
+                source = 'wikipedia'
+                AND timestamp >= (SELECT max_timestamp FROM latest) - INTERVAL 1 HOUR
+                AND source_subtype IN ('edit', 'new')
+                AND NOT startsWith(title, 'Category:')
+                AND NOT startsWith(title, 'Kategorie:')
+                AND NOT startsWith(title, 'Категори:')
+                AND NOT startsWith(title, 'File:')
+            GROUP BY title
+            ORDER BY magnitude DESC, events DESC
+            LIMIT {limit}
+            """
         )
-        SELECT
-            title,
-            sum(event_count) AS events,
-            sum(magnitude_sum) AS magnitude
-        FROM title_activity_5m
-        WHERE
-            source = '{source}'
-            AND bucket >= (SELECT max_bucket FROM latest) - INTERVAL 1 HOUR
-        GROUP BY title
-        ORDER BY events DESC, magnitude DESC
-        LIMIT {limit}
-        """
-    )
+    else:
+        df = query_df(
+            f"""
+            WITH latest AS
+            (
+                SELECT max(bucket) AS max_bucket
+                FROM title_activity_5m
+                WHERE source = '{source}'
+            )
+            SELECT
+                title,
+                sum(event_count) AS events,
+                sum(magnitude_sum) AS magnitude
+            FROM title_activity_5m
+            WHERE
+                source = '{source}'
+                AND bucket >= (SELECT max_bucket FROM latest) - INTERVAL 1 HOUR
+            GROUP BY title
+            ORDER BY magnitude DESC, events DESC
+            LIMIT {limit}
+            """
+        )
     st.markdown(f"**{label}**")
     if df.empty:
         st.caption("No recent events.")
@@ -178,7 +245,7 @@ def top_titles(source: str, label: str, limit: int = 15) -> None:
 
 def render_top_titles() -> None:
     st.subheader("Top Titles By Source, Latest Available 1h")
-    st.caption("Each column uses that source's latest available local timestamp. Producers are run manually during Stage 1, so one global wall-clock hour would hide inactive sources.")
+    st.caption("Each column uses that source's latest available local timestamp. Wikipedia category/file maintenance is filtered here so article-like activity is easier to inspect.")
     cols = st.columns(3)
     with cols[0]:
         top_titles("wikipedia", "Wikipedia Articles")
@@ -233,6 +300,20 @@ def render_geography() -> None:
         st.plotly_chart(fig, use_container_width=True)
 
 
+def render_takeaways() -> None:
+    st.subheader("What This Shows Before LLM Enrichment")
+    cols = st.columns(3)
+    cols[0].markdown(
+        "**Wikipedia**\n\nHigh-volume global edit stream. Great for attention spikes, but raw data contains lots of bot/category maintenance."
+    )
+    cols[1].markdown(
+        "**GDELT**\n\nStructured global news/event stream. Already has geography and event codes, but labels need translation into human-readable topics."
+    )
+    cols[2].markdown(
+        "**Hacker News**\n\nTech discussion signal. No geography, but strong for AI/product/infrastructure topics and useful cross-source overlap later."
+    )
+
+
 def main() -> None:
     st.set_page_config(
         page_title="OpenSignal",
@@ -250,6 +331,10 @@ def main() -> None:
     )
 
     render_metrics()
+    st.divider()
+    render_source_health()
+    st.divider()
+    render_takeaways()
     st.divider()
     render_firehose()
     st.divider()

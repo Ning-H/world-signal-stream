@@ -143,6 +143,8 @@ The dashboard includes:
 
 Stage 1 geography note: GDELT provides country codes in the raw feed. Wikipedia and Hacker News do not provide reliable geography at ingestion time, so those are intentionally left blank until the enrichment layer extracts entities and locations.
 
+Stage 1 quality note: the dashboard now filters obvious Wikipedia category/file maintenance in the top-title view, but raw Wikipedia still includes user pages, sandboxes, bots, and non-article edits. Stage 2 enrichment and Stage 3 correlation are where those signals become cleaner topics.
+
 ## Bluesky Ingestion
 
 Bluesky Jetstream is available as an optional experimental open social firehose source.
