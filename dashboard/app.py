@@ -15,6 +15,7 @@ SOURCE_COLORS = {
     "gdelt": "#ef4444",
     "hackernews": "#f59e0b",
 }
+SOURCES = ["wikipedia", "gdelt", "hackernews"]
 
 
 @st.cache_resource
@@ -39,7 +40,8 @@ def render_metrics() -> None:
         SELECT
             source,
             count() AS events,
-            max(ingested_at) AS latest
+            max(ingested_at) AS latest,
+            countIf(geography_hint IS NOT NULL) AS with_geo
         FROM events_raw
         GROUP BY source
         ORDER BY source
@@ -47,17 +49,35 @@ def render_metrics() -> None:
     )
 
     cols = st.columns(3)
-    for index, source in enumerate(["wikipedia", "gdelt", "hackernews"]):
+    for index, source in enumerate(SOURCES):
         row = df[df["source"] == source]
         events = int(row["events"].iloc[0]) if not row.empty else 0
         latest = row["latest"].iloc[0] if not row.empty else "none"
-        cols[index].metric(source.title(), f"{events:,}", help=f"Latest event: {latest}")
+        with_geo = int(row["with_geo"].iloc[0]) if not row.empty else 0
+        geo_label = f"{with_geo:,} geo hints"
+        cols[index].metric(source.title(), f"{events:,}", delta=geo_label, help=f"Latest local ingest: {latest}")
 
 
 def render_firehose() -> None:
-    st.subheader("Live Event Firehose")
+    st.subheader("Balanced Event Firehose")
     df = query_df(
         """
+        WITH ranked AS
+        (
+            SELECT
+                ingested_at,
+                timestamp,
+                source,
+                source_subtype,
+                language,
+                geography_hint,
+                title,
+                actor,
+                magnitude,
+                content_url,
+                row_number() OVER (PARTITION BY source ORDER BY ingested_at DESC) AS source_rank
+            FROM events_raw
+        )
         SELECT
             ingested_at,
             timestamp,
@@ -69,11 +89,12 @@ def render_firehose() -> None:
             actor,
             magnitude,
             content_url
-        FROM events_raw
-        ORDER BY ingested_at DESC
-        LIMIT 100
+        FROM ranked
+        WHERE source_rank <= 35
+        ORDER BY source, ingested_at DESC
         """
     )
+    st.caption("Shows the latest rows from each source, so a recently-run producer does not hide quieter or older local sources.")
     st.dataframe(
         df,
         use_container_width=True,
@@ -123,6 +144,12 @@ def render_volume() -> None:
 def top_titles(source: str, label: str, limit: int = 15) -> None:
     df = query_df(
         f"""
+        WITH latest AS
+        (
+            SELECT max(bucket) AS max_bucket
+            FROM title_activity_5m
+            WHERE source = '{source}'
+        )
         SELECT
             title,
             sum(event_count) AS events,
@@ -130,7 +157,7 @@ def top_titles(source: str, label: str, limit: int = 15) -> None:
         FROM title_activity_5m
         WHERE
             source = '{source}'
-            AND bucket >= now() - INTERVAL 1 HOUR
+            AND bucket >= (SELECT max_bucket FROM latest) - INTERVAL 1 HOUR
         GROUP BY title
         ORDER BY events DESC, magnitude DESC
         LIMIT {limit}
@@ -150,7 +177,8 @@ def top_titles(source: str, label: str, limit: int = 15) -> None:
 
 
 def render_top_titles() -> None:
-    st.subheader("Top Titles By Source, Last 1h")
+    st.subheader("Top Titles By Source, Latest Available 1h")
+    st.caption("Each column uses that source's latest available local timestamp. Producers are run manually during Stage 1, so one global wall-clock hour would hide inactive sources.")
     cols = st.columns(3)
     with cols[0]:
         top_titles("wikipedia", "Wikipedia Articles")
@@ -158,6 +186,51 @@ def render_top_titles() -> None:
         top_titles("gdelt", "GDELT Actors/Events")
     with cols[2]:
         top_titles("hackernews", "Hacker News Stories")
+
+
+def render_geography() -> None:
+    st.subheader("Geography Hints")
+    coverage = query_df(
+        """
+        SELECT
+            source,
+            count() AS events,
+            countIf(geography_hint IS NOT NULL) AS with_geo,
+            round(100 * with_geo / events, 1) AS geo_pct
+        FROM events_raw
+        GROUP BY source
+        ORDER BY source
+        """
+    )
+    st.caption("GDELT provides source-level country codes. Wikipedia and Hacker News do not provide reliable geography in raw ingestion; those are left for enrichment.")
+    st.dataframe(coverage, use_container_width=True, hide_index=True)
+
+    gdelt_geo = query_df(
+        """
+        SELECT
+            geography_hint,
+            count() AS events
+        FROM events_raw
+        WHERE source = 'gdelt' AND geography_hint IS NOT NULL
+        GROUP BY geography_hint
+        ORDER BY events DESC
+        LIMIT 20
+        """
+    )
+    if not gdelt_geo.empty:
+        fig = px.bar(
+            gdelt_geo,
+            x="geography_hint",
+            y="events",
+            color_discrete_sequence=[SOURCE_COLORS["gdelt"]],
+        )
+        fig.update_layout(
+            height=300,
+            margin=dict(l=12, r=12, t=20, b=12),
+            xaxis_title="Country code",
+            yaxis_title="GDELT events",
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 
 def main() -> None:
@@ -182,6 +255,8 @@ def main() -> None:
     st.divider()
     render_volume()
     st.divider()
+    render_geography()
+    st.divider()
     render_top_titles()
 
     st.caption(f"Last refreshed at {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}")
@@ -189,4 +264,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

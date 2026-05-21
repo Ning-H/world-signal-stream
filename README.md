@@ -136,9 +136,12 @@ make demo
 
 The dashboard includes:
 
-- live event firehose, last 100 events
+- balanced event firehose, latest rows from each source
 - stacked volume by source, last 24 hours
-- top titles by source, last 1 hour
+- geography hint coverage and GDELT country distribution
+- top titles by source, using each source's latest available hour
+
+Stage 1 geography note: GDELT provides country codes in the raw feed. Wikipedia and Hacker News do not provide reliable geography at ingestion time, so those are intentionally left blank until the enrichment layer extracts entities and locations.
 
 ## Bluesky Ingestion
 
