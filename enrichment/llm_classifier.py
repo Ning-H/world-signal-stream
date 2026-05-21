@@ -87,6 +87,7 @@ def event_cache_key(event: RawEvent) -> str:
 
 
 def selected_events_sql(limit: int) -> str:
+    per_source_limit = max(1, (limit + 2) // 3)
     return f"""
     WITH candidates AS
     (
@@ -106,10 +107,18 @@ def selected_events_sql(limit: int) -> str:
                 source = 'hackernews', 2,
                 source = 'wikipedia'
                     AND source_subtype IN ('edit', 'new')
+                    AND language = 'en'
                     AND coalesce(magnitude, 0) >= 500
                     AND is_bot = 0
                     AND NOT startsWith(title, 'Category:')
-                    AND NOT startsWith(title, 'File:'),
+                    AND NOT startsWith(title, 'File:')
+                    AND NOT startsWith(title, 'User:')
+                    AND NOT startsWith(title, 'User talk:')
+                    AND NOT startsWith(title, 'Talk:')
+                    AND NOT startsWith(title, 'Template:')
+                    AND NOT startsWith(title, 'Wikipedia:')
+                    AND NOT startsWith(title, 'Draft:')
+                    AND NOT startsWith(title, 'Module:'),
                 1,
                 0
             ) AS priority
@@ -120,6 +129,17 @@ def selected_events_sql(limit: int) -> str:
               FROM enrichment_dlq
               WHERE recorded_at >= now() - INTERVAL 1 DAY
           )
+    ),
+    ranked AS
+    (
+        SELECT
+            *,
+            row_number() OVER (
+                PARTITION BY source
+                ORDER BY priority DESC, coalesce(magnitude, 0) DESC, timestamp DESC
+            ) AS source_rank
+        FROM candidates
+        WHERE priority > 0
     )
     SELECT
         event_id,
@@ -132,9 +152,9 @@ def selected_events_sql(limit: int) -> str:
         magnitude,
         geography_hint,
         content_hint
-    FROM candidates
-    WHERE priority > 0
-    ORDER BY priority DESC, coalesce(magnitude, 0) DESC, timestamp DESC
+    FROM ranked
+    WHERE source_rank <= {per_source_limit}
+    ORDER BY source_rank, priority DESC, coalesce(magnitude, 0) DESC, timestamp DESC
     LIMIT {limit}
     """
 

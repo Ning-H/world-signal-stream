@@ -229,22 +229,23 @@ def fetch_events(hours: int) -> list[EnrichedEvent]:
     rows = clickhouse_client().query_df(
         f"""
         SELECT
-            event_id,
-            source,
-            timestamp,
-            title,
-            category,
-            sentiment,
-            entities
-        FROM events_enriched
-        WHERE timestamp >= now() - INTERVAL {hours} HOUR
-          AND length(entities) >= 2
-        ORDER BY timestamp
+            e.event_id AS event_id,
+            e.source AS source,
+            coalesce(r.ingested_at, e.enriched_at, e.timestamp) AS attention_time,
+            e.title AS title,
+            e.category AS category,
+            e.sentiment AS sentiment,
+            e.entities AS entities
+        FROM events_enriched AS e
+        LEFT JOIN events_raw AS r ON e.event_id = r.event_id
+        WHERE attention_time >= now() - INTERVAL {hours} HOUR
+          AND length(e.entities) >= 2
+        ORDER BY attention_time
         """
     )
     events = []
     for _, row in rows.iterrows():
-        timestamp = row["timestamp"]
+        timestamp = row["attention_time"]
         if getattr(timestamp, "tzinfo", None) is None:
             timestamp = timestamp.replace(tzinfo=UTC)
         events.append(
@@ -261,7 +262,7 @@ def fetch_events(hours: int) -> list[EnrichedEvent]:
     return events
 
 
-def insert_clusters(clusters: list[TopicCluster]) -> None:
+def insert_clusters(clusters: list[TopicCluster], min_shared_entities: int, min_events: int) -> None:
     if not clusters:
         return
     columns = [
@@ -278,6 +279,8 @@ def insert_clusters(clusters: list[TopicCluster]) -> None:
         "first_seen",
         "last_seen",
         "sample_titles",
+        "min_shared_entities",
+        "min_events",
         "computed_at",
     ]
     computed_at = datetime.now(UTC)
@@ -305,6 +308,8 @@ def insert_clusters(clusters: list[TopicCluster]) -> None:
             "first_seen": cluster.first_seen,
             "last_seen": cluster.last_seen,
             "sample_titles": list(cluster.sample_titles),
+            "min_shared_entities": min_shared_entities,
+            "min_events": min_events,
             "computed_at": computed_at,
         }
         rows.append([row[column] for column in columns])
@@ -315,7 +320,7 @@ def run(hours: int, min_shared_entities: int, min_events: int, dry_run: bool) ->
     events = fetch_events(hours)
     clusters = cluster_events(events, min_shared_entities=min_shared_entities, min_events=min_events)
     if not dry_run:
-        insert_clusters(clusters)
+        insert_clusters(clusters, min_shared_entities=min_shared_entities, min_events=min_events)
     return {
         "events_loaded": len(events),
         "clusters": len(clusters),

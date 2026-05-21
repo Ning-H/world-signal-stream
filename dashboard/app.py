@@ -395,8 +395,15 @@ def render_enriched_signals() -> None:
         if geo_df.empty:
             st.caption("No geography rollups yet.")
         else:
-            fig = px.bar(geo_df, x="geography", y="sentiment_score", color="events")
-            fig.update_layout(height=360, margin=dict(l=12, r=12, t=20, b=12), xaxis_title="", yaxis_title="Net sentiment")
+            fig = px.choropleth(
+                geo_df,
+                locations="geography",
+                color="sentiment_score",
+                hover_data=["events"],
+                color_continuous_scale="RdYlGn",
+                range_color=(-1, 1),
+            )
+            fig.update_layout(height=360, margin=dict(l=12, r=12, t=20, b=12), coloraxis_colorbar_title="Net")
             st.plotly_chart(fig, use_container_width=True)
     with cols[2]:
         st.markdown("**Top Entities**")
@@ -404,6 +411,133 @@ def render_enriched_signals() -> None:
             st.caption("No entity rollups yet.")
         else:
             st.dataframe(entity_df, use_container_width=True, hide_index=True)
+
+
+def render_topic_storyboard() -> None:
+    st.subheader("Cross-Source Storyboard")
+    st.caption("Topic clusters show which stories are concentrated in one source versus appearing across multiple sources. Loose one-entity overlaps are labeled as exploratory candidates.")
+
+    summary = query_df(
+        """
+        SELECT
+            count() AS clusters,
+            countIf((wikipedia_events > 0) + (gdelt_events > 0) + (hackernews_events > 0) >= 2) AS cross_source,
+            max(computed_at) AS latest_computed,
+            any(min_shared_entities) AS min_shared_entities
+        FROM topic_clusters
+        """
+    )
+    if summary.empty or int(summary["clusters"].iloc[0]) == 0:
+        st.info("No topic clusters yet. Run `make correlate`.")
+        return
+
+    row = summary.iloc[0]
+    cols = st.columns(4)
+    cols[0].metric("Topic Windows", f"{int(row['clusters']):,}")
+    cols[1].metric("Cross-Source", f"{int(row['cross_source']):,}")
+    cols[2].metric("Match Threshold", f"{int(row['min_shared_entities'])} entity")
+    cols[3].metric("Latest Computed", str(row["latest_computed"]))
+
+    clusters = query_df(
+        """
+        SELECT
+            arrayStringConcat(top_entities, ', ') AS topic,
+            category,
+            sentiment,
+            wikipedia_events,
+            gdelt_events,
+            hackernews_events,
+            total_events,
+            min_shared_entities,
+            arrayStringConcat(sample_titles, ' | ') AS samples
+        FROM topic_clusters
+        ORDER BY
+            ((wikipedia_events > 0) + (gdelt_events > 0) + (hackernews_events > 0)) DESC,
+            total_events DESC,
+            window_start DESC
+        LIMIT 20
+        """
+    )
+    if clusters.empty:
+        return
+
+    source_mix = clusters.melt(
+        id_vars=["topic"],
+        value_vars=["wikipedia_events", "gdelt_events", "hackernews_events"],
+        var_name="source",
+        value_name="events",
+    )
+    source_mix["source"] = source_mix["source"].str.replace("_events", "", regex=False)
+    source_mix = source_mix[source_mix["events"] > 0]
+
+    fig = px.bar(
+        source_mix,
+        x="events",
+        y="topic",
+        color="source",
+        orientation="h",
+        color_discrete_map=SOURCE_COLORS,
+    )
+    fig.update_layout(height=520, margin=dict(l=12, r=12, t=20, b=12), yaxis_title="", xaxis_title="Events")
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.dataframe(
+        clusters[["topic", "category", "sentiment", "total_events", "min_shared_entities", "samples"]],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+def render_breaking_now() -> None:
+    st.subheader("Stories Breaking Now")
+    st.caption("Clusters with the most activity in the latest local windows. This is the early-warning surface before a longer baseline model is added.")
+
+    df = query_df(
+        """
+        SELECT
+            window_start,
+            arrayStringConcat(top_entities, ', ') AS topic,
+            category,
+            sentiment,
+            total_events,
+            wikipedia_events,
+            gdelt_events,
+            hackernews_events
+        FROM topic_clusters
+        WHERE window_start >= (SELECT max(window_start) FROM topic_clusters) - INTERVAL 30 MINUTE
+        ORDER BY total_events DESC, window_start DESC
+        LIMIT 15
+        """
+    )
+    if df.empty:
+        st.info("No recent clusters yet.")
+        return
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+
+def render_language_divergence() -> None:
+    st.subheader("Language Divergence")
+    st.caption("Non-English raw activity that is visible locally but not yet represented in the selected enriched English-heavy sample.")
+
+    df = query_df(
+        """
+        SELECT
+            language,
+            source,
+            title,
+            count() AS events,
+            sum(coalesce(magnitude, 0)) AS magnitude
+        FROM events_raw
+        WHERE language NOT IN ('', 'en')
+        GROUP BY language, source, title
+        ORDER BY events DESC, magnitude DESC
+        LIMIT 20
+        """
+    )
+    if df.empty:
+        st.info("No non-English events in the local sample.")
+        return
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 def main() -> None:
@@ -435,6 +569,12 @@ def main() -> None:
     render_geography()
     st.divider()
     render_enriched_signals()
+    st.divider()
+    render_topic_storyboard()
+    st.divider()
+    render_breaking_now()
+    st.divider()
+    render_language_divergence()
     st.divider()
     render_top_titles()
 

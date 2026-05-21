@@ -98,9 +98,11 @@ Dashboard-facing rollups are stored in `category_volume_5m`, `sentiment_by_geo_1
 
 The first topic clustering job lives in `flink_jobs/cross_source_correlator.py`. It is intentionally a bounded ClickHouse-backed implementation before the PyFlink version so the entity-overlap behavior can be tested quickly on local enriched data.
 
-The v1 algorithm uses 1-hour sliding windows with 5-minute slide. Within each window, events become connected when they share at least two useful normalized entities after generic labels such as `government`, `company`, and `unknown actor` are removed. Connected components with at least three events are emitted to `topic_clusters` with source counts, top entities, category, sentiment, first/last seen timestamps, and sample titles.
+The v1 algorithm uses 1-hour sliding windows with 5-minute slide over attention time, defined as raw `ingested_at` when available, then `enriched_at`, then source `timestamp`. This matters for sources like Hacker News, where a story can be old but newly present in the top attention list. Within each window, events become connected when they share at least two useful normalized entities after generic labels such as `government`, `company`, and `unknown actor` are removed. Connected components with at least three events are emitted to `topic_clusters` with source counts, top entities, category, sentiment, first/last seen timestamps, and sample titles.
 
 Embedding-based clustering is deliberately excluded from v1. It would likely improve semantic grouping, but it adds cost, latency, and operational complexity before we know whether entity overlap is good enough for the portfolio demo.
+
+Stage 3.2 surfaces both strict and exploratory matching honestly. Strict matching uses at least two shared entities and is the default for high-confidence clusters. Exploratory matching can use one shared entity for cross-source discovery on sparse local samples; rows carry `min_shared_entities` so the dashboard can label these candidates instead of presenting them as equally strong evidence.
 
 The content fields are references, not full content:
 

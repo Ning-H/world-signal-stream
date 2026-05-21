@@ -174,11 +174,19 @@ CREATE TABLE IF NOT EXISTS opensignal.topic_clusters
     first_seen DateTime64(3, 'UTC'),
     last_seen DateTime64(3, 'UTC'),
     sample_titles Array(String),
+    min_shared_entities UInt8 DEFAULT 2,
+    min_events UInt8 DEFAULT 3,
     computed_at DateTime64(3, 'UTC')
 )
 ENGINE = ReplacingMergeTree(computed_at)
 PARTITION BY toDate(window_start)
 ORDER BY (window_start, topic_id);
+
+ALTER TABLE opensignal.topic_clusters
+    ADD COLUMN IF NOT EXISTS min_shared_entities UInt8 DEFAULT 2 AFTER sample_titles;
+
+ALTER TABLE opensignal.topic_clusters
+    ADD COLUMN IF NOT EXISTS min_events UInt8 DEFAULT 3 AFTER min_shared_entities;
 
 INSERT INTO opensignal.category_volume_5m
 SELECT

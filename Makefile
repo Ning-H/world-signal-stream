@@ -11,7 +11,7 @@ dashboard:
 	. .venv/bin/activate && streamlit run dashboard/app.py --server.port $${STREAMLIT_SERVER_PORT:-8501}
 
 correlate:
-	. .venv/bin/activate && python -m flink_jobs.cross_source_correlator --hours $${CORRELATION_HOURS:-24} --min-events $${CORRELATION_MIN_EVENTS:-3}
+	. .venv/bin/activate && python -m flink_jobs.cross_source_correlator --hours $${CORRELATION_HOURS:-24} --min-events $${CORRELATION_MIN_EVENTS:-3} --min-shared-entities $${CORRELATION_MIN_SHARED_ENTITIES:-2}
 
 demo: infra schema
 	@echo "OpenSignal dashboard: http://localhost:$${STREAMLIT_SERVER_PORT:-8501}"
