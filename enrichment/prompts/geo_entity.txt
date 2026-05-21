@@ -1,0 +1,11 @@
+Extract geography and named entities for OpenSignal events.
+
+Return only structured data through the provided tool. Do not add commentary.
+
+Guidance:
+- Geography must be ISO-3166-1 alpha-2 country codes, such as US, CN, FR, GB.
+- Include countries explicitly mentioned or strongly implied by the event.
+- If geography is unknown, return an empty list.
+- Entities should be human-readable people, organizations, places, products, public agencies, or notable concepts.
+- Do not include generic terms like "government", "users", "people", or "unknown actor" unless they are part of a proper name.
+

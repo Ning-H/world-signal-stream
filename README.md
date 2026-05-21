@@ -145,6 +145,34 @@ Stage 1 geography note: GDELT provides country codes in the raw feed. Wikipedia 
 
 Stage 1 quality note: the dashboard now filters obvious Wikipedia category/file maintenance in the top-title view, but raw Wikipedia still includes user pages, sandboxes, bots, and non-article edits. Stage 2 enrichment and Stage 3 correlation are where those signals become cleaner topics.
 
+## LLM Enrichment
+
+Stage 2 adds selected-event enrichment. The first pass intentionally enriches high-value candidates instead of the full firehose:
+
+- GDELT events, prioritized by mention count
+- Hacker News stories
+- high-magnitude, article-like Wikipedia edits
+
+Apply the enrichment schema:
+
+```bash
+docker compose exec -T clickhouse clickhouse-client --multiquery < clickhouse/enrichment_schema.sql
+```
+
+Dry-run without spending API credits:
+
+```bash
+python -m enrichment.llm_classifier --dry-run --limit 25
+```
+
+Live Anthropic run:
+
+```bash
+python -m enrichment.llm_classifier --limit 25
+```
+
+The default model is `claude-haiku-4-5-20251001`, which is the Haiku model currently visible to this Anthropic workspace. Costs are recorded in `opensignal.enrichment_costs` using Anthropic token usage and the `LLM_INPUT_PRICE_PER_MTOK` / `LLM_OUTPUT_PRICE_PER_MTOK` settings from `.env`.
+
 ## Bluesky Ingestion
 
 Bluesky Jetstream is available as an optional experimental open social firehose source.

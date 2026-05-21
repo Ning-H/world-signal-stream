@@ -80,6 +80,16 @@ The first dashboard queries `events_raw` for the live firehose and uses two smal
 
 Both tables are fed by materialized views and can be backfilled from `events_raw` through `clickhouse/materialized_views.sql`.
 
+## Stage 2 Enrichment
+
+The first enrichment pass is selective rather than firehose-wide:
+
+- GDELT events are good candidates because they already have geography, event codes, source URLs, and mention counts.
+- Hacker News stories are compact and high-signal for tech/AI discussion.
+- Wikipedia enrichment is limited to high-magnitude, article-like edits because the raw stream contains substantial maintenance traffic.
+
+Enriched rows land in `events_enriched` with category, sentiment, geography, entities, confidence, and summary. Cost records land in `enrichment_costs` using provider token usage. Failed schema validations or provider errors land in `enrichment_dlq`, and the selector skips recent DLQ rows so a bad model response does not block the next batch.
+
 The content fields are references, not full content:
 
 - `content_id`: source-specific immutable content/version ID, such as a Wikipedia new revision ID.
